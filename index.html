@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle Life: Emergence Behavior</title>
+    <style>
+        /* CSS untuk Layout dan Estetika */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #050505; /* Hitam pekat agar partikel "menyala" */
+            overflow: hidden; /* Hilangkan scrollbar */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        canvas {
+            display: block;
+            /* Opsional: tambah sedikit shadow agar canvas terasa terpisah */
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* CSS untuk Panel Kontrol UI */
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.05); /* Transparan/Frosted */
+            padding: 15px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(5px); /* Efek blur di belakang panel */
+            pointer-events: none; /* Klik tembus ke canvas */
+        }
+
+        #ui-panel h1 {
+            margin: 0;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 600;
+        }
+
+        #ui-panel p {
+            margin: 5px 0 0;
+            font-size: 11px;
+            opacity: 0.6;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h1>Particle Life</h1>
+    </div>
+
+    <canvas id="lifeCanvas"></canvas>
+
+    <script>
+   const canvas = document.getElementById('lifeCanvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// --- PARAMETER SIMULASI (Optimasi dari sebelumnya) ---
+let particles = [];
+const particleSize = 2;
+const interactionRadius = 80;
+const minRepulsionRadius = 30;
+const defaultFriction = 0.5;
+
+// --- STATE INTERAKSI ---
+let mouse = { x: 0, y: 0, active: false, type: null }; // type: 'attract' | 'repel'
+
+// --- INISIALISASI ---
+const getGroup = (color) => particles.filter(p => p.color === color);
+let yellowGroup = [], redGroup = [], greenGroup = [];
+
+const create = (number, color, posX, posY) => {
+    for (let i = 0; i < number; i++) {
+        // Jika posX/posY tidak ada, acak posisinya
+        const x = (posX !== undefined) ? posX + (Math.random() * 20 - 10) : Math.random() * canvas.width;
+        const y = (posY !== undefined) ? posY + (Math.random() * 20 - 10) : Math.random() * canvas.height;
+        particles.push({
+            x: x, y: y,
+            vx: 0, vy: 0,
+            color: color
+        });
+    }
+    // Update grup setiap kali menambah partikel
+    yellowGroup = getGroup("yellow");
+    redGroup = getGroup("red");
+    greenGroup = getGroup("green");
+};
+
+// --- LOGIKA GAYA: ATURAN HIDUP + INTERAKSI MOUSE ---
+const applyRule = (particles1, particles2, g) => {
+    for (let i = 0; i < particles1.length; i++) {
+        let fx = 0;
+        let fy = 0;
+        const a = particles1[i];
+
+        // 1. Gaya Aturan Warna (Emergence)
+        for (let j = 0; j < particles2.length; j++) {
+            const b = particles2[j];
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+
+            if (d > 0 && d < interactionRadius) {
+                // Gaya tolak dekat
+                if (d < minRepulsionRadius) {
+                    const force = 1 * (1 / d); 
+                    fx += (force * dx);
+                    fy += (force * dy);
+                } else {
+                    // Gaya aturan warna (berdasarkan g)
+                    const force = g * (1 / d);
+                    fx += (force * dx);
+                    fy += (force * dy);
+                }
+            }
+        }
+
+        // 2. Gaya Mouse (Interaksi Langsung)
+        if (mouse.active) {
+            const dxM = a.x - mouse.x;
+            const dyM = a.y - mouse.y;
+            const dM = Math.sqrt(dxM * dxM + dyM * dyM);
+
+            if (dM > 0 && dM < 250) { // Jarak pengaruh mouse
+                let mouseForceStrength = 2.0; 
+                let forceM = 0;
+
+                if (mouse.type === 'attract') {
+                    // Gaya Tarik (Vortex) - partikel mengejar mouse
+                    forceM = -mouseForceStrength * (1 / dM); 
+                } else if (mouse.type === 'repel') {
+                    // Gaya Tolak (Anti-Gravity) - partikel lari
+                    forceM = mouseForceStrength * (1 / dM); 
+                }
+                fx += (forceM * dxM);
+                fy += (forceM * dyM);
+            }
+        }
+
+        // --- UPDATE FISIKA ---
+        a.vx = (a.vx + fx) * defaultFriction;
+        a.vy = (a.vy + fy) * defaultFriction;
+        a.x += a.vx;
+        a.y += a.vy;
+
+        // Boundary (Pantulan halus)
+        if (a.x <= 0) { a.x = 0; a.vx *= -1; }
+        if (a.x >= canvas.width) { a.x = canvas.width; a.vx *= -1; }
+        if (a.y <= 0) { a.y = 0; a.vy *= -1; }
+        if (a.y >= canvas.height) { a.y = canvas.height; a.vy *= -1; }
+    }
+};
+
+// --- AWAL SIMULASI ---
+function init() {
+    particles = [];
+    create(400, "yellow");
+    create(400, "red");
+    create(400, "green");
+}
+
+init();
+
+// --- LOOP ANIMASI ---
+function update() {
+    // Terapkan aturan emergence (sama seperti sebelumnya agar stabil)
+    applyRule(greenGroup, greenGroup, -0.32);
+    applyRule(greenGroup, redGroup, -0.17);
+    applyRule(greenGroup, yellowGroup, 0.34);
+    
+    applyRule(redGroup, redGroup, -0.1);
+    applyRule(redGroup, greenGroup, -0.34);
+    
+    applyRule(yellowGroup, yellowGroup, 0.15);
+    applyRule(yellowGroup, greenGroup, -0.2);
+
+    // Rendering
+    ctx.fillStyle = "#050505";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, particleSize, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    requestAnimationFrame(update);
+}
+
+update();
+
+// ==========================================
+// --- EVENT LISTENERS (KONTROL INTERAKTIF) ---
+// ==========================================
+
+// 1. MOUSE MOVING (Update Posisi Mouse)
+window.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+});
+
+// 2. MOUSE CLICKING (Aktifkan Gaya)
+window.addEventListener('mousedown', (e) => {
+    mouse.active = true;
+    if (e.button === 0) { // Klik Kiri
+        mouse.type = 'attract';
+    } else if (e.button === 2) { // Klik Kanan
+        mouse.type = 'repel';
+    }
+});
+
+window.addEventListener('mouseup', () => {
+    mouse.active = false;
+    mouse.type = null;
+});
+
+// Matikan menu konteks saat klik kanan agar tidak mengganggu simulasi
+window.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+});
+
+// 3. KEYBOARD INPUT (Tambah Partikel & Reset)
+window.addEventListener('keydown', (e) => {
+    const key = e.key.toUpperCase();
+    if (key === 'G') { // Green
+        create(10, 'green', mouse.x, mouse.y);
+    } else if (key === 'R') { // Red
+        create(10, 'red', mouse.x, mouse.y);
+    } else if (key === 'Y') { // Yellow
+        create(10, 'yellow', mouse.x, mouse.y);
+    } else if (key === 'SPACE') {
+        init(); // Reset posisi
+    }
+});
+
+// 4. HANDLE RESIZE
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    init(); // Reset posisi saat layar berubah
+});
+    </script>
+</body>
+</html>
